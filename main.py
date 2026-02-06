@@ -1,7 +1,9 @@
-# Point d'entrée du SteamBundleBot
-# Ce fichier servira de chef d'orchestre pour lancer le scan et l'analyse.
+from dotenv import load_dotenv
+
+
 
 def main():
+    load_dotenv()
     print("SteamBundleBot initialisé !")
 
 if __name__ == "__main__":

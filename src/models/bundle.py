@@ -7,3 +7,4 @@ class Bundle:
         self.name = name
         self.price = price
         self.games = games if games else []
+
