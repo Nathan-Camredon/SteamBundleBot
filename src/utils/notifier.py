@@ -39,10 +39,16 @@ class DiscordNotifier:
         }
 
         try:
-            response = requests.post(self.webhook_url, json=payload, timeout=10)
-            response.raise_for_status()
+            headers = {"User-Agent": "SteamBundleBot/1.0"}
+            response = requests.post(self.webhook_url, json=payload, headers=headers, timeout=10)
+            
+            # Si le code HTTP n'est pas 2xx, on lève une exception manuellement pour récupérer le texte de l'erreur
+            if not response.ok:
+                print(f"❌ Erreur HTTP {response.status_code} de Discord : {response.text}")
+                return False
+                
             print("📩 Notification Discord envoyée avec succès.")
             return True
         except requests.exceptions.RequestException as e:
-            print(f"❌ Erreur lors de l'envoi Discord : {e}")
+            print(f"❌ Erreur de connexion lors de l'envoi Discord : {e}")
             return False
