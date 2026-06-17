@@ -41,7 +41,16 @@ class SteamScannerBot:
 
         print("🔍 Récupération des bundles sur le store...")
         bundles_data = self.store_fetcher.fetch_bundles()
-        print(f"📦 {len(bundles_data)} bundles récupérés.")
+        
+        unique_games = set()
+        for b in bundles_data:
+            unique_games.update(b["app_ids"])
+            
+        nb_bundles = len(bundles_data)
+        nb_games = len(unique_games)
+        
+        print(f"📦 {nb_bundles} bundles récupérés, contenant {nb_games} jeux uniques.")
+        self.notifier.send_startup_stats(nb_bundles, nb_games)
         
         profitable_offers = []
 

@@ -52,3 +52,34 @@ class DiscordNotifier:
         except requests.exceptions.RequestException as e:
             print(f"❌ Erreur de connexion lors de l'envoi Discord : {e}")
             return False
+
+    def send_startup_stats(self, nb_bundles: int, nb_games: int) -> bool:
+        """
+        Envoie un message de statut au démarrage de l'analyse.
+        """
+        if not self.webhook_url:
+            return False
+            
+        message = f"Le bot commence son scan quotidien !\n\nIl a détecté **{nb_bundles} bundles** contenant un total de **{nb_games} jeux uniques**.\n\n*L'analyse de rentabilité est en cours, merci de patienter...* ⏳"
+        
+        payload = {
+            "username": "SteamBundleBot",
+            "embeds": [
+                {
+                    "title": "🔍 Démarrage de l'analyse",
+                    "description": message,
+                    "color": 3447003 # Bleu
+                }
+            ]
+        }
+        
+        try:
+            headers = {"User-Agent": "SteamBundleBot/1.0"}
+            response = requests.post(self.webhook_url, json=payload, headers=headers, timeout=10)
+            if not response.ok:
+                print(f"❌ Erreur HTTP {response.status_code} de Discord : {response.text}")
+                return False
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Erreur de connexion lors de l'envoi Discord : {e}")
+            return False
