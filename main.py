@@ -39,21 +39,53 @@ class SteamScannerBot:
         owned_games = self.store_fetcher.get_owned_games(steam_api_key, steam_id)
         print(f"✅ {len(owned_games)} jeux possédés récupérés (seront exclus de l'analyse).")
 
+        print("🔍 Récupération des jeux uniques en promotion sur le store...")
+        single_games_data = self.store_fetcher.fetch_single_games()
+        
         print("🔍 Récupération des bundles sur le store...")
         bundles_data = self.store_fetcher.fetch_bundles()
         
-        unique_games = set()
-        for b in bundles_data:
-            unique_games.update(b["app_ids"])
-            
         nb_bundles = len(bundles_data)
-        nb_games = len(unique_games)
+        nb_single_games = len(single_games_data)
         
-        print(f"📦 {nb_bundles} bundles récupérés, contenant {nb_games} jeux uniques.")
-        self.notifier.send_startup_stats(nb_bundles, nb_games)
+        print(f"📦 {nb_bundles} bundles et {nb_single_games} jeux uniques récupérés.")
+        self.notifier.send_startup_stats(nb_bundles, nb_single_games)
         
         profitable_offers = []
 
+        # --- 1. Analyse des jeux uniques ---
+        for g_data in single_games_data:
+            app_id = g_data["app_id"]
+            name = g_data["name"]
+            price = g_data["price"]
+            url = g_data["url"]
+            
+            print(f"\n🎮 Analyse du Jeu: {name} (Prix d'achat: {price}€)")
+            
+            if app_id in owned_games:
+                print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
+                continue
+                
+            game = Game(app_id=app_id, title=name, total_card=6) # mock 6 cartes
+            if not self.store_fetcher.has_card(app_id):
+                print(f"   ❌ {name} n'a pas de cartes Steam.")
+                continue
+                
+            print(f"   🃏 {name} a des cartes.")
+            avg_price = self.market_fetcher.get_average_card_price(app_id)
+            print(f"      Prix moyen carte: {avg_price}€")
+            
+            profit = self.calculator.is_solo_game_profitable(game, avg_price, price)
+            
+            if profit > 0:
+                print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€")
+                # On triche un peu en utilisant save_profitable_offer avec type="Game"
+                self.db.save_profitable_offer("Game", str(app_id), profit)
+                profitable_offers.append({"title": name, "type": "Jeu Unique", "profit": profit})
+            else:
+                print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€)")
+
+        # --- 2. Analyse des bundles ---
         for b_data in bundles_data:
             bundle_id = b_data["bundle_id"]
             name = b_data["name"]
