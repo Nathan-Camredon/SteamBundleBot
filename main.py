@@ -110,8 +110,8 @@ def main() -> None:
     # Planification
     schedule.every().day.at("21:00").do(job)
     
-    # Exécution immédiate d'un test pour vérifier la fonctionnalité
-    print("⚙️ Lancement d'un test initial immédiat pour validation...")
+    # Exécution immédiate au lancement du script
+    print("⚙️ Exécution immédiate du batch à l'initialisation...")
     job()
     print("\n⏳ En attente des prochaines exécutions programmées... (Ctrl+C pour quitter)")
 
