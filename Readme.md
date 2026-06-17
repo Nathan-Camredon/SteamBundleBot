@@ -42,8 +42,19 @@ SteamBundleBot est un script d'automatisation Python conçu pour scanner le maga
 
 ## Utilisation
 
-Démarrez simplement le script principal. Il s'exécutera une première fois à l'initialisation, puis se mettra en attente pour son exécution quotidienne planifiée.
+Le projet est livré avec un environnement Docker prêt à l'emploi. C'est la méthode recommandée pour faire tourner le bot en tâche de fond (24h/24).
 
+### Option 1 : Avec Docker (Recommandé)
+
+Lancez simplement le conteneur en arrière-plan via Docker Compose :
+```bash
+docker-compose up -d
+```
+*Votre base de données `steambundlebot.db` sera sauvegardée en dehors du conteneur dans le dossier local `data/` afin de ne jamais perdre votre historique en cas de redémarrage.*
+
+### Option 2 : En Local (Standard)
+
+Démarrez simplement le script principal :
 ```bash
 python main.py
 ```
