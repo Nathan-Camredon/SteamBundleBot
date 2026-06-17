@@ -64,7 +64,7 @@ class StoreFetcher:
             
             # search_result_row correspond aux entrées de la liste de recherche
             rows = soup.find_all('a', {'class': 'search_result_row'})
-            for row in rows[:5]:  # Limite de 5 pour les tests
+            for row in rows:
                 bundle_url = row.get('href', '')
                 title_span = row.find('span', {'class': 'title'})
                 title = title_span.text if title_span else "Unknown Bundle"
