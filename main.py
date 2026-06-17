@@ -41,7 +41,7 @@ class SteamScannerBot:
 
         print("🔍 Récupération des bundles sur le store...")
         bundles_data = self.store_fetcher.fetch_bundles()
-        print(f"📦 {len(bundles_data)} bundles récupérés (test limit à 5).")
+        print(f"📦 {len(bundles_data)} bundles récupérés.")
         
         profitable_offers = []
 
