@@ -53,14 +53,14 @@ class DiscordNotifier:
             print(f"❌ Erreur de connexion lors de l'envoi Discord : {e}")
             return False
 
-    def send_startup_stats(self, nb_bundles: int, nb_games: int) -> bool:
+    def send_startup_stats(self, nb_bundles: int, nb_single_games: int) -> bool:
         """
         Envoie un message de statut au démarrage de l'analyse.
         """
         if not self.webhook_url:
             return False
             
-        message = f"Le bot commence son scan quotidien !\n\nIl a détecté **{nb_bundles} bundles** contenant un total de **{nb_games} jeux uniques**.\n\n*L'analyse de rentabilité est en cours, merci de patienter...* ⏳"
+        message = f"Le bot commence son scan quotidien !\n\nIl a détecté **{nb_bundles} bundles** et **{nb_single_games} jeux en promotion à l'unité**.\n\n*L'analyse de rentabilité est en cours, merci de patienter...* ⏳"
         
         payload = {
             "username": "SteamBundleBot",

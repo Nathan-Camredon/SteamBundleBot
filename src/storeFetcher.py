@@ -96,6 +96,50 @@ class StoreFetcher:
             
         return bundles_found
 
+    def fetch_single_games(self) -> List[Dict[str, Any]]:
+        """
+        Scrape la page Steam des jeux individuels (category1=998) en promotion (specials=1).
+        """
+        # specials=1 pour ne scraper que les jeux actuellement en réduction (rentabilité possible)
+        url = "https://store.steampowered.com/search/?category1=998&specials=1"
+        games_found = []
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            rows = soup.find_all('a', {'class': 'search_result_row'})
+            for row in rows:
+                game_url = row.get('href', '')
+                title_span = row.find('span', {'class': 'title'})
+                title = title_span.text if title_span else "Unknown Game"
+                
+                price_div = row.find('div', {'class': 'discount_final_price'})
+                if not price_div:
+                    continue
+                    
+                price_text = price_div.text.replace('€', '').replace('$', '').replace(',', '.').strip()
+                try:
+                    price = float(price_text)
+                except ValueError:
+                    continue
+                
+                app_ids_str = row.get('data-ds-appid', '')
+                app_ids = [int(i) for i in app_ids_str.split(',') if i.isdigit()]
+                
+                if game_url and app_ids:
+                    games_found.append({
+                        "name": title,
+                        "url": game_url,
+                        "price": price,
+                        "app_id": app_ids[0] # Un seul jeu
+                    })
+                    
+        except Exception as e:
+            print(f"❌ Erreur lors de la récupération des jeux uniques : {e}")
+            
+        return games_found
+
     def has_card(self, app_id: int) -> bool:
         """
         Vérifie si un jeu (app_id) possède des cartes Steam (category id: 29).
