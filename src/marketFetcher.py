@@ -24,6 +24,7 @@ class MarketFetcher:
                 "appid": 753, # Steam inventory app
                 "category_753_Game[]": f"tag_app_{app_id}",
                 "category_753_item_class[]": "tag_item_class_2", # Trading cards
+                "category_753_cardborder[]": "tag_cardborder_0", # Normal border (exclut les cartes Foil)
                 "norender": 1,
                 "count": 5
             }
