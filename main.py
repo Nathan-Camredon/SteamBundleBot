@@ -78,10 +78,13 @@ class SteamScannerBot:
             profit = self.calculator.is_solo_game_profitable(game, avg_price, price)
             
             if profit > 0:
-                print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€")
-                # On triche un peu en utilisant save_profitable_offer avec type="Game"
-                self.db.save_profitable_offer("Game", str(app_id), profit)
-                profitable_offers.append({"title": name, "type": "Jeu Unique", "profit": profit})
+                if self.db.is_offer_notified(str(app_id)):
+                    print(f"   💸 JEU RENTABLE ({profit}€) mais déjà notifié précédemment.")
+                else:
+                    print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€")
+                    # On triche un peu en utilisant save_profitable_offer avec type="Game"
+                    self.db.save_profitable_offer("Game", str(app_id), profit)
+                    profitable_offers.append({"title": name, "type": "Jeu Unique", "profit": profit})
             else:
                 print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€)")
 
@@ -129,10 +132,13 @@ class SteamScannerBot:
             profit = self.calculator.is_bundle_profitable(bundle, card_prices)
             
             if profit > 0:
-                print(f"   💰 BUNDLE RENTABLE ! Profit estimé net : {profit}€")
-                self.db.save_bundle(bundle)
-                self.db.save_profitable_offer("bundle", bundle_id, profit)
-                profitable_offers.append({"title": name, "type": "Bundle", "profit": profit})
+                if self.db.is_offer_notified(bundle_id):
+                    print(f"   💸 BUNDLE RENTABLE ({profit}€) mais déjà notifié précédemment.")
+                else:
+                    print(f"   💰 BUNDLE RENTABLE ! Profit estimé net : {profit}€")
+                    self.db.save_bundle(bundle)
+                    self.db.save_profitable_offer("bundle", bundle_id, profit)
+                    profitable_offers.append({"title": name, "type": "Bundle", "profit": profit})
             else:
                 print(f"   📉 Bundle Non rentable (Déficit de {abs(profit)}€)")
 

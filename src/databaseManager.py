@@ -102,3 +102,12 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute('SELECT 1 FROM games_with_cards WHERE app_id = ?', (app_id,))
             return cursor.fetchone() is not None
+
+    def is_offer_notified(self, item_id: str) -> bool:
+        """
+        Vérifie si une offre (jeu ou bundle) a déjà été notifiée sur Discord.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1 FROM profitable_offers WHERE item_id = ?', (str(item_id),))
+            return cursor.fetchone() is not None
