@@ -1,3 +1,4 @@
+import os
 import requests
 import time
 import json
@@ -23,16 +24,42 @@ class HumbleFetcher:
     def _load_steam_apps(self) -> None:
         """
         Charge la liste de toutes les apps Steam pour résoudre les noms en app_id.
+        Utilise IStoreService/GetAppList/v1/ avec pagination.
         """
+        api_key = os.getenv("STEAM_API_KEY")
+        if not api_key:
+            print("⚠️ STEAM_API_KEY manquante, impossible de charger le cache Steam pour Humble Bundle.")
+            return
+            
         print("🔄 Chargement du cache des applications Steam (HumbleFetcher)...")
+        url = "https://api.steampowered.com/IStoreService/GetAppList/v1/"
+        last_appid = 0
+        has_more = True
+        
         try:
-            response = requests.get("https://api.steampowered.com/ISteamApps/GetAppList/v2/", timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            apps = data.get("applist", {}).get("apps", [])
-            for app in apps:
-                # Store lowercased names for easier matching
-                self.steam_apps_cache[app["name"].lower()] = app["appid"]
+            while has_more:
+                params = {
+                    "key": api_key,
+                    "max_results": 50000,
+                    "last_appid": last_appid,
+                    "include_games": True,
+                    "include_dlc": False,
+                    "include_hardware": False,
+                    "include_software": False,
+                    "include_videos": False
+                }
+                response = requests.get(url, params=params, timeout=15)
+                response.raise_for_status()
+                data = response.json().get("response", {})
+                apps = data.get("apps", [])
+                
+                for app in apps:
+                    if "name" in app and "appid" in app:
+                        self.steam_apps_cache[app["name"].lower()] = app["appid"]
+                        
+                has_more = data.get("have_more_results", False)
+                last_appid = data.get("last_appid", last_appid)
+                time.sleep(0.5) # Anti rate-limit Steam
         except Exception as e:
             print(f"⚠️ Impossible de charger la liste des applications Steam: {e}")
 
