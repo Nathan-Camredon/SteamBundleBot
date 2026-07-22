@@ -4,6 +4,7 @@ import schedule
 from dotenv import load_dotenv
 
 from src.storeFetcher import StoreFetcher
+from src.humbleFetcher import HumbleFetcher
 from src.marketFetcher import MarketFetcher
 from src.profitCalculator import ProfitCalculator
 from src.databaseManager import DatabaseManager
@@ -17,6 +18,7 @@ class SteamScannerBot:
     """
     def __init__(self) -> None:
         self.store_fetcher = StoreFetcher()
+        self.humble_fetcher = HumbleFetcher()
         self.market_fetcher = MarketFetcher()
         self.calculator = ProfitCalculator()
         self.db = DatabaseManager()
@@ -44,6 +46,10 @@ class SteamScannerBot:
         
         print("🔍 Récupération des bundles sur le store...")
         bundles_data = self.store_fetcher.fetch_bundles()
+        
+        print("🔍 Récupération des bundles sur Humble Bundle...")
+        humble_bundles = self.humble_fetcher.fetch_bundles()
+        bundles_data.extend(humble_bundles)
         
         nb_bundles = len(bundles_data)
         nb_single_games = len(single_games_data)
