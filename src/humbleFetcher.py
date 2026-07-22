@@ -1,5 +1,6 @@
 import os
 import requests
+import cloudscraper
 import time
 import json
 from bs4 import BeautifulSoup
@@ -18,6 +19,7 @@ class HumbleFetcher:
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1"
         }
+        self.scraper = cloudscraper.create_scraper()
         self.steam_apps_cache: Dict[str, int] = {}
         self._load_steam_apps()
 
@@ -82,7 +84,7 @@ class HumbleFetcher:
         """
         bundles_found = []
         try:
-            response = requests.get(self.url_bundles, headers=self.headers, timeout=15)
+            response = self.scraper.get(self.url_bundles, headers=self.headers, timeout=15)
             if response.status_code == 403:
                 print("⚠️ Accès refusé à Humble Bundle (Cloudflare/403).")
                 return bundles_found
