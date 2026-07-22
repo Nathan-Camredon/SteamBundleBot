@@ -80,7 +80,7 @@ class HumbleFetcher:
 
     def fetch_bundles(self) -> List[Dict[str, Any]]:
         """
-        Récupère les bundles actifs sur Humble Bundle.
+        Récupère les bundles actifs sur Humble Bundle et extrait les Tiers comme des bundles distincts.
         """
         bundles_found = []
         try:
@@ -92,46 +92,72 @@ class HumbleFetcher:
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Recherche des données JSON intégrées
-            scripts = soup.find_all('script')
-            json_data = None
-            for script in scripts:
-                content = script.string
-                if not content:
-                    continue
+            # 1. Extraire les URLs des bundles de jeux depuis la page d'accueil
+            script_landing = soup.find('script', id='landingPage-json-data')
+            if not script_landing or not script_landing.string:
+                print("⚠️ Impossible de trouver landingPage-json-data sur Humble Bundle.")
+                return bundles_found
+                
+            data = json.loads(script_landing.string)
+            games_data = data.get('data', {}).get('games', {})
+            mosaics = games_data.get('mosaic', [])
+            if not mosaics:
+                print("⚠️ Aucun mosaic de jeux trouvé sur Humble Bundle.")
+                return bundles_found
+                
+            products = mosaics[0].get('products', [])
+            bundle_urls = ["https://www.humblebundle.com" + p['product_url'] for p in products if 'product_url' in p]
+            
+            # 2. Explorer chaque bundle pour en extraire les Tiers
+            for bundle_url in bundle_urls:
+                try:
+                    b_response = self.scraper.get(bundle_url, headers=self.headers, timeout=15)
+                    b_response.raise_for_status()
+                    b_soup = BeautifulSoup(b_response.text, 'html.parser')
+                    b_script = b_soup.find('script', id='webpack-bundle-page-data')
+                    if not b_script or not b_script.string:
+                        continue
+                        
+                    b_data = json.loads(b_script.string).get('bundleData', {})
+                    human_name = b_data.get('basic_data', {}).get('human_name', 'Humble Bundle')
+                    machine_name = b_data.get('machine_name', 'unknown_bundle')
                     
-                if script.get('id') == '__NEXT_DATA__':
-                    try:
-                        json_data = json.loads(content)
-                        break
-                    except json.JSONDecodeError:
-                        pass
-                elif 'window.client_view_data' in content:
-                    # Extraction rudimentaire d'une assignation globale
-                    try:
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}') + 1
-                        if start_idx != -1 and end_idx != -1:
-                            json_data = json.loads(content[start_idx:end_idx])
-                        break
-                    except json.JSONDecodeError:
-                        pass
-                elif 'webpack-bundle-data' in content:
-                    try:
-                        json_data = json.loads(content)
-                        break
-                    except:
-                        pass
-
-            if json_data:
-                print("💡 Données JSON Humble Bundle trouvées, mais l'extraction des Tiers nécessite une structure spécifique.")
-                # Le format de Humble Bundle change fréquemment.
-                # Pour l'instant, on n'ajoute rien à bundles_found pour éviter un plantage
-                # avec des données non documentées.
-                pass
-            else:
-                print("⚠️ Impossible d'extraire les données JSON de Humble Bundle (Format inconnu ou Cloudflare).")
-
+                    tier_display = b_data.get('tier_display_data', {})
+                    tier_pricing = b_data.get('tier_pricing_data', {})
+                    tier_items = b_data.get('tier_item_data', {})
+                    
+                    for identifier, display_data in tier_display.items():
+                        # Récupérer le prix
+                        price_data = tier_pricing.get(identifier, {})
+                        amount = price_data.get('price|money', {}).get('amount')
+                        if amount is None:
+                            continue
+                        price = float(amount)
+                        
+                        # Récupérer les jeux du Tier
+                        machine_names = display_data.get('tier_item_machine_names', [])
+                        app_ids = []
+                        for m_name in machine_names:
+                            item_info = tier_items.get(m_name, {})
+                            game_title = item_info.get('human_name', '')
+                            
+                            app_id = self._resolve_steam_app_id(game_title)
+                            if app_id:
+                                app_ids.append(app_id)
+                        
+                        if app_ids:
+                            bundles_found.append({
+                                "name": f"{human_name} ({identifier})",
+                                "url": bundle_url,
+                                "price": price,
+                                "app_ids": app_ids,
+                                "bundle_id": f"hb_{machine_name}_{identifier}"
+                            })
+                            
+                    time.sleep(1) # Anti rate-limit Humble
+                except Exception as e:
+                    print(f"⚠️ Erreur lors du parsing du bundle {bundle_url}: {e}")
+                    
         except requests.exceptions.RequestException as e:
             print(f"❌ Erreur réseau lors de la récupération des bundles Humble : {e}")
         except Exception as e:
