@@ -38,12 +38,12 @@ class SteamScannerBot:
             print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
             return None
             
-        if not await self.store_fetcher.has_card(app_id, session):
+        if not await self.store_fetcher.has_card(session, app_id):
             print(f"   ❌ {name} n'a pas de cartes Steam.")
             return None
             
         print(f"   🃏 {name} a des cartes.")
-        avg_price, total_cards = await self.market_fetcher.get_average_card_price(app_id, session)
+        avg_price, total_cards = await self.market_fetcher.get_average_card_price(session, app_id)
         game = Game(app_id=app_id, title=name, total_card=total_cards)
         print(f"      Prix moyen carte: {avg_price}€ (Total cartes: {total_cards})")
         
@@ -83,9 +83,9 @@ class SteamScannerBot:
                 print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
                 continue
             
-            if await self.store_fetcher.has_card(app_id, session):
+            if await self.store_fetcher.has_card(session, app_id):
                 print(f"   🃏 App_{app_id} a des cartes.")
-                avg_price, total_cards = await self.market_fetcher.get_average_card_price(app_id, session)
+                avg_price, total_cards = await self.market_fetcher.get_average_card_price(session, app_id)
                 game = Game(app_id=app_id, title=f"App_{app_id}", total_card=total_cards)
                 games.append(game)
                 card_prices[game.app_id] = avg_price
