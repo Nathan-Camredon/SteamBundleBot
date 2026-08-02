@@ -1,5 +1,5 @@
-import requests
-import time
+import aiohttp
+import asyncio
 from typing import Optional
 
 class MarketFetcher:
@@ -9,16 +9,13 @@ class MarketFetcher:
     def __init__(self) -> None:
         self.base_url: str = "https://steamcommunity.com/market/search/render/"
         self.headers = {"User-Agent": "SteamBundleBot/1.0"}
-        
-    def _sleep_to_prevent_ban(self) -> None:
-        """Délai de sécurité pour éviter le rate-limit du Market."""
-        time.sleep(3)
 
-    def get_average_card_price(self, app_id: int, card_name: str = "") -> tuple[float, int]:
+    async def get_average_card_price(self, session: aiohttp.ClientSession, app_id: int, card_name: str = "") -> tuple[float, int]:
         """
         Recherche le prix moyen des cartes pour un jeu donné en utilisant l'API search du Market.
         """
-        self._sleep_to_prevent_ban()
+        # Délai de sécurité pour éviter le rate-limit du Market.
+        await asyncio.sleep(1.5)
         try:
             params = {
                 "appid": 753, # Steam inventory app
@@ -31,9 +28,9 @@ class MarketFetcher:
             if card_name:
                 params["query"] = card_name
 
-            response = requests.get(self.base_url, headers=self.headers, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+            async with session.get(self.base_url, headers=self.headers, params=params, timeout=10) as response:
+                response.raise_for_status()
+                data = await response.json()
             
             total_count = data.get("total_count", 0)
             results = data.get("results", [])

@@ -1,5 +1,5 @@
-import requests
-import time
+import aiohttp
+import asyncio
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any, List
 
@@ -13,7 +13,7 @@ class StoreFetcher:
         self.url_player_service: str = "http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
         self.headers: Dict[str, str] = {"User-Agent": "SteamBundleBot/1.0"}
 
-    def get_owned_games(self, api_key: str, steam_id: str) -> List[int]:
+    async def get_owned_games(self, session: aiohttp.ClientSession, api_key: str, steam_id: str) -> List[int]:
         """
         Récupère la liste des app_id possédés par l'utilisateur via la Steam Web API.
         """
@@ -28,10 +28,9 @@ class StoreFetcher:
                 'format': 'json',
                 'include_played_free_games': True
             }
-            response = requests.get(self.url_player_service, params=params, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
+            async with session.get(self.url_player_service, params=params, timeout=10) as response:
+                response.raise_for_status()
+                data = await response.json()
             games = data.get("response", {}).get("games", [])
             owned_ids = [g["appid"] for g in games]
             return owned_ids
@@ -39,28 +38,29 @@ class StoreFetcher:
             print(f"❌ Erreur lors de la récupération des jeux possédés : {e}")
             return []
 
-    def fetch_store(self) -> Optional[Dict[str, Any]]:
+    async def fetch_store(self, session: aiohttp.ClientSession) -> Optional[Dict[str, Any]]:
         """
         Récupère les données de la page d'accueil (featuredcategories).
         """
         try:
-            response = requests.get(self.url_store, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
+            async with session.get(self.url_store, headers=self.headers, timeout=10) as response:
+                response.raise_for_status()
+                return await response.json()
+        except Exception as e:
             print(f"❌ Erreur lors de la requête API Store : {e}")
             return None
 
-    def fetch_bundles(self) -> List[Dict[str, Any]]:
+    async def fetch_bundles(self, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
         """
         Scrape la page Steam des bundles (category1=996) pour trouver les vrais bundles.
         """
         url = "https://store.steampowered.com/search/?category1=996"
         bundles_found = []
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
+            async with session.get(url, headers=self.headers, timeout=10) as response:
+                response.raise_for_status()
+                text = await response.text()
+            soup = BeautifulSoup(text, 'html.parser')
             
             # search_result_row correspond aux entrées de la liste de recherche
             rows = soup.find_all('a', {'class': 'search_result_row'})
@@ -96,7 +96,7 @@ class StoreFetcher:
             
         return bundles_found
 
-    def fetch_single_games(self) -> List[Dict[str, Any]]:
+    async def fetch_single_games(self, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
         """
         Scrape la page Steam des jeux individuels (category1=998) en promotion (specials=1).
         """
@@ -104,9 +104,10 @@ class StoreFetcher:
         url = "https://store.steampowered.com/search/?category1=998&specials=1"
         games_found = []
         try:
-            response = requests.get(url, headers=self.headers, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
+            async with session.get(url, headers=self.headers, timeout=10) as response:
+                response.raise_for_status()
+                text = await response.text()
+            soup = BeautifulSoup(text, 'html.parser')
             
             rows = soup.find_all('a', {'class': 'search_result_row'})
             for row in rows:
@@ -140,17 +141,17 @@ class StoreFetcher:
             
         return games_found
 
-    def has_card(self, app_id: int) -> bool:
+    async def has_card(self, session: aiohttp.ClientSession, app_id: int) -> bool:
         """
         Vérifie si un jeu (app_id) possède des cartes Steam (category id: 29).
         """
-        time.sleep(1.5)  # Respect du rate-limit Steam
+        await asyncio.sleep(1.5)  # Respect du rate-limit Steam
         try:
             params = {'appids': app_id}
-            response = requests.get(self.url_app, headers=self.headers, params=params, timeout=10)
-            response.raise_for_status()
+            async with session.get(self.url_app, headers=self.headers, params=params, timeout=10) as response:
+                response.raise_for_status()
+                data = await response.json()
             
-            data = response.json()
             app_data = data.get(str(app_id), {})
             
             if not app_data.get('success'):
