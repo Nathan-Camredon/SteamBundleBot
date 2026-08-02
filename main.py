@@ -72,27 +72,33 @@ class SteamScannerBot:
                 print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
                 continue
                 
-            game = Game(app_id=app_id, title=name, total_card=6) # mock 6 cartes
             if not self.store_fetcher.has_card(app_id):
                 print(f"   ❌ {name} n'a pas de cartes Steam.")
                 continue
                 
             print(f"   🃏 {name} a des cartes.")
-            avg_price = self.market_fetcher.get_average_card_price(app_id)
-            print(f"      Prix moyen carte: {avg_price}€")
+            avg_price, total_cards = self.market_fetcher.get_average_card_price(app_id)
+            game = Game(app_id=app_id, title=name, total_card=total_cards)
+            print(f"      Prix moyen carte: {avg_price}€ (Total cartes: {total_cards})")
             
             profit = self.calculator.is_solo_game_profitable(game, avg_price, price)
+            roi = ((profit + price) / price) * 100 if price > 0 else 100
             
-            if profit > 0:
+            if profit > 0 or roi >= 95:
                 if self.db.is_offer_notified(str(app_id)):
-                    print(f"   💸 JEU RENTABLE ({profit}€) mais déjà notifié précédemment.")
+                    print(f"   💸 JEU ({profit}€ / ROI {roi:.1f}%) déjà notifié précédemment.")
                 else:
-                    print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€")
-                    # On triche un peu en utilisant save_profitable_offer avec type="Game"
+                    if profit > 0:
+                        print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€ (ROI {roi:.1f}%)")
+                        offer_type = "Jeu Unique"
+                    else:
+                        print(f"   💎 JEU PRESQUE GRATUIT ! Profit : {profit}€ (ROI {roi:.1f}%)")
+                        offer_type = "Jeu Unique (Presque Gratuit)"
+                    
                     self.db.save_profitable_offer("Game", str(app_id), profit)
-                    profitable_offers.append({"title": name, "type": "Jeu Unique", "profit": profit})
+                    profitable_offers.append({"title": name, "type": offer_type, "profit": profit})
             else:
-                print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€)")
+                print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€, ROI {roi:.1f}%)")
 
         # --- 2. Analyse des bundles ---
         for b_data in bundles_data:
@@ -104,16 +110,19 @@ class SteamScannerBot:
             print(f"\n📦 Analyse du Bundle: {name} (Prix d'achat: {price}€)")
             
             games = []
+            card_prices = {}
             for app_id in app_ids:
                 if app_id in owned_games:
                     print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
                     continue
                 
-                # Mock de total_card pour le test (on suppose 6 cartes par set)
-                game = Game(app_id=app_id, title=f"App_{app_id}", total_card=6)
                 if self.store_fetcher.has_card(app_id):
                     print(f"   🃏 App_{app_id} a des cartes.")
+                    avg_price, total_cards = self.market_fetcher.get_average_card_price(app_id)
+                    game = Game(app_id=app_id, title=f"App_{app_id}", total_card=total_cards)
                     games.append(game)
+                    card_prices[game.app_id] = avg_price
+                    print(f"      Prix moyen carte App_{app_id}: {avg_price}€ (Total cartes: {total_cards})")
                 else:
                     print(f"   ❌ App_{app_id} n'a pas de cartes.")
 
@@ -123,30 +132,30 @@ class SteamScannerBot:
 
             bundle = Bundle(bundle_id=bundle_id, name=name, total_price=price, list_of_games=games)
             
-            # Fetch prix marché pour chaque jeu valide
-            card_prices = {}
             valid_games_list = bundle.get_valid_games()[0]
             if not valid_games_list:
                 print(f"   📉 Bundle '{name}' ignoré (jeux valides mais aucun drop disponible).")
                 continue
                 
-            for game in valid_games_list:
-                avg_price = self.market_fetcher.get_average_card_price(game.app_id)
-                card_prices[game.app_id] = avg_price
-                print(f"      Prix moyen carte App_{game.app_id}: {avg_price}€")
-                
             profit = self.calculator.is_bundle_profitable(bundle, card_prices)
+            roi = ((profit + price) / price) * 100 if price > 0 else 100
             
-            if profit > 0:
+            if profit > 0 or roi >= 95:
                 if self.db.is_offer_notified(bundle_id):
-                    print(f"   💸 BUNDLE RENTABLE ({profit}€) mais déjà notifié précédemment.")
+                    print(f"   💸 BUNDLE ({profit}€ / ROI {roi:.1f}%) déjà notifié précédemment.")
                 else:
-                    print(f"   💰 BUNDLE RENTABLE ! Profit estimé net : {profit}€")
+                    if profit > 0:
+                        print(f"   💰 BUNDLE RENTABLE ! Profit estimé net : {profit}€ (ROI {roi:.1f}%)")
+                        offer_type = "Bundle"
+                    else:
+                        print(f"   💎 BUNDLE PRESQUE GRATUIT ! Profit : {profit}€ (ROI {roi:.1f}%)")
+                        offer_type = "Bundle (Presque Gratuit)"
+                        
                     self.db.save_bundle(bundle)
                     self.db.save_profitable_offer("bundle", bundle_id, profit)
-                    profitable_offers.append({"title": name, "type": "Bundle", "profit": profit})
+                    profitable_offers.append({"title": name, "type": offer_type, "profit": profit})
             else:
-                print(f"   📉 Bundle Non rentable (Déficit de {abs(profit)}€)")
+                print(f"   📉 Bundle Non rentable (Déficit de {abs(profit)}€, ROI {roi:.1f}%)")
 
         # Envoi de la notification
         self.notifier.send_recap(profitable_offers)
