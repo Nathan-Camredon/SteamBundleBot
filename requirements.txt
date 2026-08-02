@@ -1,5 +1,6 @@
-requests==2.31.0
-beautifulsoup4==4.12.3
-python-dotenv==1.0.1
-schedule==1.2.2
-cloudscraper>=1.2.71
+requests
+beautifulsoup4
+python-dotenv
+schedule
+cloudscraper
+aiohttp

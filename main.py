@@ -1,6 +1,8 @@
 import os
 import time
 import schedule
+import asyncio
+import aiohttp
 from dotenv import load_dotenv
 
 from src.storeFetcher import StoreFetcher
@@ -24,7 +26,107 @@ class SteamScannerBot:
         self.db = DatabaseManager()
         self.notifier = DiscordNotifier()
 
-    def run_daily_batch(self) -> None:
+    async def process_game(self, g_data: dict, owned_games: list, session: aiohttp.ClientSession) -> dict | None:
+        app_id = g_data["app_id"]
+        name = g_data["name"]
+        price = g_data["price"]
+        url = g_data.get("url", "")
+        
+        print(f"\n🎮 Analyse du Jeu: {name} (Prix d'achat: {price}€)")
+        
+        if app_id in owned_games:
+            print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
+            return None
+            
+        if not await self.store_fetcher.has_card(session, app_id):
+            print(f"   ❌ {name} n'a pas de cartes Steam.")
+            return None
+            
+        print(f"   🃏 {name} a des cartes.")
+        avg_price, total_cards = await self.market_fetcher.get_average_card_price(session, app_id)
+        game = Game(app_id=app_id, title=name, total_card=total_cards)
+        print(f"      Prix moyen carte: {avg_price}€ (Total cartes: {total_cards})")
+        
+        profit = self.calculator.is_solo_game_profitable(game, avg_price, price)
+        roi = ((profit + price) / price) * 100 if price > 0 else 100
+        
+        if profit > 0 or roi >= 95:
+            if self.db.is_offer_notified(str(app_id)):
+                print(f"   💸 JEU ({profit}€ / ROI {roi:.1f}%) déjà notifié précédemment.")
+                return None
+            else:
+                if profit > 0:
+                    print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€ (ROI {roi:.1f}%)")
+                    offer_type = "Jeu Unique"
+                else:
+                    print(f"   💎 JEU PRESQUE GRATUIT ! Profit : {profit}€ (ROI {roi:.1f}%)")
+                    offer_type = "Jeu Unique (Presque Gratuit)"
+                
+                self.db.save_profitable_offer("Game", str(app_id), profit)
+                return {"title": name, "type": offer_type, "profit": profit}
+        else:
+            print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€, ROI {roi:.1f}%)")
+            return None
+
+    async def process_bundle(self, b_data: dict, owned_games: list, session: aiohttp.ClientSession) -> dict | None:
+        bundle_id = b_data["bundle_id"]
+        name = b_data["name"]
+        price = b_data["price"]
+        app_ids = b_data["app_ids"]
+        
+        print(f"\n📦 Analyse du Bundle: {name} (Prix d'achat: {price}€)")
+        
+        games = []
+        card_prices = {}
+        for app_id in app_ids:
+            if app_id in owned_games:
+                print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
+                continue
+            
+            if await self.store_fetcher.has_card(session, app_id):
+                print(f"   🃏 App_{app_id} a des cartes.")
+                avg_price, total_cards = await self.market_fetcher.get_average_card_price(session, app_id)
+                game = Game(app_id=app_id, title=f"App_{app_id}", total_card=total_cards)
+                games.append(game)
+                card_prices[game.app_id] = avg_price
+                print(f"      Prix moyen carte App_{app_id}: {avg_price}€ (Total cartes: {total_cards})")
+            else:
+                print(f"   ❌ App_{app_id} n'a pas de cartes.")
+
+        if not games:
+            print(f"   📉 Bundle '{name}' ignoré (aucun jeu valide non-possédé).")
+            return None
+
+        bundle = Bundle(bundle_id=bundle_id, name=name, total_price=price, list_of_games=games)
+        
+        valid_games_list = bundle.get_valid_games()[0]
+        if not valid_games_list:
+            print(f"   📉 Bundle '{name}' ignoré (jeux valides mais aucun drop disponible).")
+            return None
+            
+        profit = self.calculator.is_bundle_profitable(bundle, card_prices)
+        roi = ((profit + price) / price) * 100 if price > 0 else 100
+        
+        if profit > 0 or roi >= 95:
+            if self.db.is_offer_notified(bundle_id):
+                print(f"   💸 BUNDLE ({profit}€ / ROI {roi:.1f}%) déjà notifié précédemment.")
+                return None
+            else:
+                if profit > 0:
+                    print(f"   💰 BUNDLE RENTABLE ! Profit estimé net : {profit}€ (ROI {roi:.1f}%)")
+                    offer_type = "Bundle"
+                else:
+                    print(f"   💎 BUNDLE PRESQUE GRATUIT ! Profit : {profit}€ (ROI {roi:.1f}%)")
+                    offer_type = "Bundle (Presque Gratuit)"
+                    
+                self.db.save_bundle(bundle)
+                self.db.save_profitable_offer("bundle", bundle_id, profit)
+                return {"title": name, "type": offer_type, "profit": profit}
+        else:
+            print(f"   📉 Bundle Non rentable (Déficit de {abs(profit)}€, ROI {roi:.1f}%)")
+            return None
+
+    async def run_daily_batch(self) -> None:
         """
         Exécute le workflow principal:
         1. Fetch jeux possédés (pour les exclure)
@@ -38,115 +140,44 @@ class SteamScannerBot:
         steam_api_key = os.getenv("STEAM_API_KEY", "")
         steam_id = os.getenv("STEAM_ID", "")
         
-        owned_games = self.store_fetcher.get_owned_games(steam_api_key, steam_id)
-        print(f"✅ {len(owned_games)} jeux possédés récupérés (seront exclus de l'analyse).")
-
-        print("🔍 Récupération des jeux uniques en promotion sur le store...")
-        single_games_data = self.store_fetcher.fetch_single_games()
-        
-        print("🔍 Récupération des bundles sur le store...")
-        bundles_data = self.store_fetcher.fetch_bundles()
-        
-        print("🔍 Récupération des bundles sur Humble Bundle...")
-        humble_bundles = self.humble_fetcher.fetch_bundles()
-        bundles_data.extend(humble_bundles)
-        
-        nb_bundles = len(bundles_data)
-        nb_single_games = len(single_games_data)
-        
-        print(f"📦 {nb_bundles} bundles et {nb_single_games} jeux uniques récupérés.")
-        self.notifier.send_startup_stats(nb_bundles, nb_single_games)
-        
         profitable_offers = []
+        
+        async with aiohttp.ClientSession() as session:
+            owned_games = await self.store_fetcher.get_owned_games(session, steam_api_key, steam_id)
+            print(f"✅ {len(owned_games)} jeux possédés récupérés (seront exclus de l'analyse).")
 
-        # --- 1. Analyse des jeux uniques ---
-        for g_data in single_games_data:
-            app_id = g_data["app_id"]
-            name = g_data["name"]
-            price = g_data["price"]
-            url = g_data["url"]
+            print("🔍 Récupération des jeux uniques en promotion sur le store...")
+            single_games_data = await self.store_fetcher.fetch_single_games(session)
             
-            print(f"\n🎮 Analyse du Jeu: {name} (Prix d'achat: {price}€)")
+            print("🔍 Récupération des bundles sur le store...")
+            bundles_data = await self.store_fetcher.fetch_bundles(session)
             
-            if app_id in owned_games:
-                print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
-                continue
-                
-            game = Game(app_id=app_id, title=name, total_card=6) # mock 6 cartes
-            if not self.store_fetcher.has_card(app_id):
-                print(f"   ❌ {name} n'a pas de cartes Steam.")
-                continue
-                
-            print(f"   🃏 {name} a des cartes.")
-            avg_price = self.market_fetcher.get_average_card_price(app_id)
-            print(f"      Prix moyen carte: {avg_price}€")
+            print("🔍 Récupération des bundles sur Humble Bundle...")
+            # humble_fetcher is still synchronous
+            humble_bundles = self.humble_fetcher.fetch_bundles()
+            bundles_data.extend(humble_bundles)
             
-            profit = self.calculator.is_solo_game_profitable(game, avg_price, price)
+            nb_bundles = len(bundles_data)
+            nb_single_games = len(single_games_data)
             
-            if profit > 0:
-                if self.db.is_offer_notified(str(app_id)):
-                    print(f"   💸 JEU RENTABLE ({profit}€) mais déjà notifié précédemment.")
-                else:
-                    print(f"   💰 JEU RENTABLE ! Profit estimé net : {profit}€")
-                    # On triche un peu en utilisant save_profitable_offer avec type="Game"
-                    self.db.save_profitable_offer("Game", str(app_id), profit)
-                    profitable_offers.append({"title": name, "type": "Jeu Unique", "profit": profit})
-            else:
-                print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€)")
+            print(f"📦 {nb_bundles} bundles et {nb_single_games} jeux uniques récupérés.")
+            self.notifier.send_startup_stats(nb_bundles, nb_single_games)
 
-        # --- 2. Analyse des bundles ---
-        for b_data in bundles_data:
-            bundle_id = b_data["bundle_id"]
-            name = b_data["name"]
-            price = b_data["price"]
-            app_ids = b_data["app_ids"]
+            # --- 1. Analyse des jeux uniques ---
+            game_tasks = [self.process_game(g_data, owned_games, session) for g_data in single_games_data]
+            game_results = await asyncio.gather(*game_tasks)
             
-            print(f"\n📦 Analyse du Bundle: {name} (Prix d'achat: {price}€)")
-            
-            games = []
-            for app_id in app_ids:
-                if app_id in owned_games:
-                    print(f"   ⏩ Jeu {app_id} ignoré (déjà possédé).")
-                    continue
-                
-                # Mock de total_card pour le test (on suppose 6 cartes par set)
-                game = Game(app_id=app_id, title=f"App_{app_id}", total_card=6)
-                if self.store_fetcher.has_card(app_id):
-                    print(f"   🃏 App_{app_id} a des cartes.")
-                    games.append(game)
-                else:
-                    print(f"   ❌ App_{app_id} n'a pas de cartes.")
+            for res in game_results:
+                if res:
+                    profitable_offers.append(res)
 
-            if not games:
-                print(f"   📉 Bundle '{name}' ignoré (aucun jeu valide non-possédé).")
-                continue
-
-            bundle = Bundle(bundle_id=bundle_id, name=name, total_price=price, list_of_games=games)
+            # --- 2. Analyse des bundles ---
+            bundle_tasks = [self.process_bundle(b_data, owned_games, session) for b_data in bundles_data]
+            bundle_results = await asyncio.gather(*bundle_tasks)
             
-            # Fetch prix marché pour chaque jeu valide
-            card_prices = {}
-            valid_games_list = bundle.get_valid_games()[0]
-            if not valid_games_list:
-                print(f"   📉 Bundle '{name}' ignoré (jeux valides mais aucun drop disponible).")
-                continue
-                
-            for game in valid_games_list:
-                avg_price = self.market_fetcher.get_average_card_price(game.app_id)
-                card_prices[game.app_id] = avg_price
-                print(f"      Prix moyen carte App_{game.app_id}: {avg_price}€")
-                
-            profit = self.calculator.is_bundle_profitable(bundle, card_prices)
-            
-            if profit > 0:
-                if self.db.is_offer_notified(bundle_id):
-                    print(f"   💸 BUNDLE RENTABLE ({profit}€) mais déjà notifié précédemment.")
-                else:
-                    print(f"   💰 BUNDLE RENTABLE ! Profit estimé net : {profit}€")
-                    self.db.save_bundle(bundle)
-                    self.db.save_profitable_offer("bundle", bundle_id, profit)
-                    profitable_offers.append({"title": name, "type": "Bundle", "profit": profit})
-            else:
-                print(f"   📉 Bundle Non rentable (Déficit de {abs(profit)}€)")
+            for res in bundle_results:
+                if res:
+                    profitable_offers.append(res)
 
         # Envoi de la notification
         self.notifier.send_recap(profitable_offers)
@@ -155,7 +186,7 @@ class SteamScannerBot:
 
 def job():
     bot = SteamScannerBot()
-    bot.run_daily_batch()
+    asyncio.run(bot.run_daily_batch())
 
 def main() -> None:
     load_dotenv()

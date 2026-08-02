@@ -9,8 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8
 
-# Installer les dépendances
-# On copie d'abord uniquement requirements.txt pour profiter du cache Docker
+# Installer nodejs pour cloudscraper
+RUN apt-get update && apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*
+
+# Copier les requirements et installer les dépendances
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
