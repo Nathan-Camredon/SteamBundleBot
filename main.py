@@ -13,6 +13,7 @@ from src.databaseManager import DatabaseManager
 from src.game import Game
 from src.bundle import Bundle
 from src.utils.notifier import DiscordNotifier
+from src.utils.safeLog import redact
 
 class SteamScannerBot:
     """
@@ -51,7 +52,7 @@ class SteamScannerBot:
         roi = ((profit + price) / price) * 100 if price > 0 else 100
         
         if profit > 0 or roi >= 95:
-            if self.db.is_offer_notified(str(app_id)):
+            if self.db.is_offer_notified(f"game_{app_id}"):
                 print(f"   💸 JEU ({profit}€ / ROI {roi:.1f}%) déjà notifié précédemment.")
                 return None
             else:
@@ -62,8 +63,8 @@ class SteamScannerBot:
                     print(f"   💎 JEU PRESQUE GRATUIT ! Profit : {profit}€ (ROI {roi:.1f}%)")
                     offer_type = "Jeu Unique (Presque Gratuit)"
                 
-                self.db.save_profitable_offer("Game", str(app_id), profit)
-                return {"title": name, "type": offer_type, "profit": profit}
+                return {"title": name, "type": offer_type, "profit": profit,
+                        "db_type": "game", "item_id": f"game_{app_id}"}
         else:
             print(f"   📉 Jeu Non rentable (Déficit de {abs(profit)}€, ROI {roi:.1f}%)")
             return None
@@ -108,7 +109,7 @@ class SteamScannerBot:
         roi = ((profit + price) / price) * 100 if price > 0 else 100
         
         if profit > 0 or roi >= 95:
-            if self.db.is_offer_notified(bundle_id):
+            if self.db.is_offer_notified(f"bundle_{bundle_id}"):
                 print(f"   💸 BUNDLE ({profit}€ / ROI {roi:.1f}%) déjà notifié précédemment.")
                 return None
             else:
@@ -119,9 +120,8 @@ class SteamScannerBot:
                     print(f"   💎 BUNDLE PRESQUE GRATUIT ! Profit : {profit}€ (ROI {roi:.1f}%)")
                     offer_type = "Bundle (Presque Gratuit)"
                     
-                self.db.save_bundle(bundle)
-                self.db.save_profitable_offer("bundle", bundle_id, profit)
-                return {"title": name, "type": offer_type, "profit": profit}
+                return {"title": name, "type": offer_type, "profit": profit,
+                        "db_type": "bundle", "item_id": f"bundle_{bundle_id}", "bundle": bundle}
         else:
             print(f"   📉 Bundle Non rentable (Déficit de {abs(profit)}€, ROI {roi:.1f}%)")
             return None
@@ -180,13 +180,28 @@ class SteamScannerBot:
                     profitable_offers.append(res)
 
         # Envoi de la notification
-        self.notifier.send_recap(profitable_offers)
+        # Les offres ne sont marquées "notifiées" qu'après un envoi Discord réussi,
+        # sinon elles seraient perdues définitivement en cas d'échec d'envoi.
+        if self.notifier.send_recap(profitable_offers):
+            for offer in profitable_offers:
+                if "bundle" in offer:
+                    self.db.save_bundle(offer["bundle"])
+                self.db.save_profitable_offer(offer["db_type"], offer["item_id"], offer["profit"])
+        else:
+            print("⚠️ Récapitulatif non envoyé : les offres seront re-proposées au prochain scan.")
         print("✅ Batch terminé.")
 
 
-def job():
-    bot = SteamScannerBot()
-    asyncio.run(bot.run_daily_batch())
+def job() -> None:
+    """
+    Lance un batch. Toute exception est loggée pour ne pas tuer le processus
+    (sinon boucle de redémarrage Docker avec un nouveau batch à chaque fois).
+    """
+    try:
+        bot = SteamScannerBot()
+        asyncio.run(bot.run_daily_batch())
+    except Exception as e:
+        print(f"❌ Batch échoué : {redact(e)}")
 
 def main() -> None:
     load_dotenv()

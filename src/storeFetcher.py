@@ -1,7 +1,8 @@
 import aiohttp
-import asyncio
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any, List
+from src.utils.rateLimiter import RateLimiter
+from src.utils.safeLog import redact
 
 class StoreFetcher:
     """
@@ -10,8 +11,9 @@ class StoreFetcher:
     def __init__(self) -> None:
         self.url_store: str = "https://store.steampowered.com/api/featuredcategories"
         self.url_app: str = "https://store.steampowered.com/api/appdetails"
-        self.url_player_service: str = "http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
+        self.url_player_service: str = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
         self.headers: Dict[str, str] = {"User-Agent": "SteamBundleBot/1.0"}
+        self.rate_limiter: RateLimiter = RateLimiter(1.5)  # Respect du rate-limit Steam
 
     async def get_owned_games(self, session: aiohttp.ClientSession, api_key: str, steam_id: str) -> List[int]:
         """
@@ -35,7 +37,7 @@ class StoreFetcher:
             owned_ids = [g["appid"] for g in games]
             return owned_ids
         except Exception as e:
-            print(f"❌ Erreur lors de la récupération des jeux possédés : {e}")
+            print(f"❌ Erreur lors de la récupération des jeux possédés : {redact(e)}")
             return []
 
     async def fetch_store(self, session: aiohttp.ClientSession) -> Optional[Dict[str, Any]]:
@@ -47,7 +49,7 @@ class StoreFetcher:
                 response.raise_for_status()
                 return await response.json()
         except Exception as e:
-            print(f"❌ Erreur lors de la requête API Store : {e}")
+            print(f"❌ Erreur lors de la requête API Store : {redact(e)}")
             return None
 
     async def fetch_bundles(self, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
@@ -145,7 +147,7 @@ class StoreFetcher:
         """
         Vérifie si un jeu (app_id) possède des cartes Steam (category id: 29).
         """
-        await asyncio.sleep(1.5)  # Respect du rate-limit Steam
+        await self.rate_limiter.wait()
         try:
             params = {'appids': app_id}
             async with session.get(self.url_app, headers=self.headers, params=params, timeout=10) as response:
@@ -163,5 +165,6 @@ class StoreFetcher:
                     return True
                     
             return False
-        except Exception:
+        except Exception as e:
+            print(f"❌ Erreur has_card pour app_id {app_id}: {redact(e)}")
             return False

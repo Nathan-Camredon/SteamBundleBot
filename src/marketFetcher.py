@@ -1,6 +1,7 @@
 import aiohttp
-import asyncio
 from typing import Optional
+from src.utils.rateLimiter import RateLimiter
+from src.utils.safeLog import redact
 
 class MarketFetcher:
     """
@@ -9,13 +10,14 @@ class MarketFetcher:
     def __init__(self) -> None:
         self.base_url: str = "https://steamcommunity.com/market/search/render/"
         self.headers = {"User-Agent": "SteamBundleBot/1.0"}
+        self.rate_limiter: RateLimiter = RateLimiter(3.0)  # Le Market est plus strict que le Store
 
     async def get_average_card_price(self, session: aiohttp.ClientSession, app_id: int, card_name: str = "") -> tuple[float, int]:
         """
         Recherche le prix moyen des cartes pour un jeu donné en utilisant l'API search du Market.
         """
         # Délai de sécurité pour éviter le rate-limit du Market.
-        await asyncio.sleep(1.5)
+        await self.rate_limiter.wait()
         try:
             params = {
                 "appid": 753, # Steam inventory app
@@ -56,5 +58,5 @@ class MarketFetcher:
             return round(total_price / valid_items, 2), total_count
 
         except Exception as e:
-            print(f"❌ Erreur lors de la récupération du prix marché pour app_id {app_id}: {e}")
+            print(f"❌ Erreur lors de la récupération du prix marché pour app_id {app_id}: {redact(e)}")
             return 0.0, 0
