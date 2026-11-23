@@ -1,6 +1,7 @@
-import requests
-import time
+import aiohttp
 from typing import Optional
+from src.utils.rateLimiter import RateLimiter
+from src.utils.safeLog import redact
 
 class MarketFetcher:
     """
@@ -9,16 +10,14 @@ class MarketFetcher:
     def __init__(self) -> None:
         self.base_url: str = "https://steamcommunity.com/market/search/render/"
         self.headers = {"User-Agent": "SteamBundleBot/1.0"}
-        
-    def _sleep_to_prevent_ban(self) -> None:
-        """Délai de sécurité pour éviter le rate-limit du Market."""
-        time.sleep(3)
+        self.rate_limiter: RateLimiter = RateLimiter(3.0)  # Le Market est plus strict que le Store
 
-    def get_average_card_price(self, app_id: int, card_name: str = "") -> float:
+    async def get_average_card_price(self, session: aiohttp.ClientSession, app_id: int, card_name: str = "") -> tuple[float, int]:
         """
         Recherche le prix moyen des cartes pour un jeu donné en utilisant l'API search du Market.
         """
-        self._sleep_to_prevent_ban()
+        # Délai de sécurité pour éviter le rate-limit du Market.
+        await self.rate_limiter.wait()
         try:
             params = {
                 "appid": 753, # Steam inventory app
@@ -31,13 +30,14 @@ class MarketFetcher:
             if card_name:
                 params["query"] = card_name
 
-            response = requests.get(self.base_url, headers=self.headers, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+            async with session.get(self.base_url, headers=self.headers, params=params, timeout=10) as response:
+                response.raise_for_status()
+                data = await response.json()
             
+            total_count = data.get("total_count", 0)
             results = data.get("results", [])
             if not results:
-                return 0.0
+                return 0.0, 0
                 
             total_price = 0.0
             valid_items = 0
@@ -53,10 +53,10 @@ class MarketFetcher:
                     continue
                     
             if valid_items == 0:
-                return 0.0
+                return 0.0, 0
                 
-            return round(total_price / valid_items, 2)
+            return round(total_price / valid_items, 2), total_count
 
         except Exception as e:
-            print(f"❌ Erreur lors de la récupération du prix marché pour app_id {app_id}: {e}")
-            return 0.0
+            print(f"❌ Erreur lors de la récupération du prix marché pour app_id {app_id}: {redact(e)}")
+            return 0.0, 0

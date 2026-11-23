@@ -5,6 +5,7 @@ import time
 import json
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any, Optional
+from src.utils.safeLog import redact
 
 class HumbleFetcher:
     """
@@ -63,7 +64,7 @@ class HumbleFetcher:
                 last_appid = data.get("last_appid", last_appid)
                 time.sleep(0.5) # Anti rate-limit Steam
         except Exception as e:
-            print(f"⚠️ Impossible de charger la liste des applications Steam: {e}")
+            print(f"⚠️ Impossible de charger la liste des applications Steam: {redact(e)}")
 
     def _resolve_steam_app_id(self, game_name: str) -> Optional[int]:
         """
@@ -159,7 +160,7 @@ class HumbleFetcher:
                     print(f"⚠️ Erreur lors du parsing du bundle {bundle_url}: {e}")
                     
         except requests.exceptions.RequestException as e:
-            print(f"❌ Erreur réseau lors de la récupération des bundles Humble : {e}")
+            print(f"❌ Erreur réseau lors de la récupération des bundles Humble : {redact(e)}")
         except Exception as e:
             print(f"❌ Erreur inattendue : {e}")
 

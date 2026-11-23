@@ -22,7 +22,9 @@ class ProfitCalculator:
         Calcule l'Expected Value (EV) des drops d'un jeu.
         """
         net_card_price = self.calculate_net_fee(avg_card_price)
-        return net_card_price * game.drop_available()
+        ev = net_card_price * game.drop_available()
+        # Multiplicateur de 1.05 pour simuler 1% de chance de drop une carte Foil valant ~10x plus
+        return round(ev * 1.05, 3)
 
     def is_solo_game_profitable(self, game: Game, avg_card_price: float, game_cost: float) -> float:
         """
